@@ -1,12 +1,9 @@
 # Runtime data
 data/
 
-# Dependencies
-node_modules/
-
-# Cache and temp
 __pycache__/
 *.pyc
 .env
 *.log
 .venv/
+node_modules/
