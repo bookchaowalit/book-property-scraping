@@ -1,1 +1,2 @@
-"""Property category scrapers."""
+"""Property source adapters."""
+

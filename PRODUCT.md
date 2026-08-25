@@ -2,7 +2,7 @@
 
 **Slug:** `bookchaowalit/book-property-scraping`  
 **Generated:** 2026-08-11 (bulk Book Dev closeout)  
-**Status:** starter / portfolio boundary
+**Status:** collection adapter present; scheduler still runs from `book-job-scraping`
 
 ## Purpose
 
@@ -13,6 +13,14 @@ system.
 ## Runnable path
 
 See `README.md` for install and run instructions when present.
+
+## Current adapters
+
+- `property/ddproperty_scraper.py` — Thai `/เช่าคอนโด` `__NEXT_DATA__` parser
+- `scrape_property_listings.py` — broader listing helper
+
+Tests live under `tests/`. The scheduler job stays disabled until httpx can
+pass Cloudflare. Collection scheduling remains in `book-job-scraping`.
 
 ## Limits
 
