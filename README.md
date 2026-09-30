@@ -27,8 +27,12 @@ python3 scrape_property_listings.py --type condo_sale_bkk  # live, writes data/e
 
 Output goes to this repository's git-ignored `data/exported/`
 (`property_listings.csv`, `property_history.csv`; the DDproperty adapter writes
-`ddproperty_condos.csv`). `--max-pages` is recorded in the plan but the
-generic runner currently fetches one page per listing type.
+`ddproperty_condos.csv`). The generic runner fetches one page per listing
+type; `--max-pages` / `max_pages` are still accepted for scheduler
+compatibility but ignored. Price drops are detected against the previous
+history (before the current run is appended) and keyed by listing URL, falling
+back to the title for rows written before `property_history.csv` had a `url`
+column.
 
 ## Crawling behaviour (honest)
 

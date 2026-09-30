@@ -2,9 +2,10 @@
 
 ## Current state
 
-Score: **5/10** (was 2/10) — tests and the runner now work from a standalone
-clone and the markdown parser is fixture-tested, but live collection still
-relies on a browser-like User-Agent and search-engine HTML fallbacks.
+Score: **5.5/10** (pass 1: 2 -> 5; pass 2: 5 -> 5.5) — the CLI and scheduler
+paths share one tested collect/persist flow and price-drop alerts actually
+work, but live collection still relies on a browser-like User-Agent and
+search-engine HTML fallbacks.
 
 ## Backlog
 
@@ -18,19 +19,13 @@ relies on a browser-like User-Agent and search-engine HTML fallbacks.
   (`book-property-scraping/1.0 (+repo URL)`) once confirmed DDproperty still
   serves it; add bounded retry/backoff on 429/5xx (see the `http.py` helper in
   book-restaurant-scraping for a tested pattern) and a robots.txt check.
-- Implement `--max-pages` (pagination) or remove the flag.
-- Unify `main()` and `PropertyListingScraper.run()` — they duplicate the
-  search-fallback loop; extract one `collect_type()` function and test it with
-  a mocked `free_scrape_url`.
-- `detect_price_drops` keys history by title only; key by canonical URL when
-  present so two units with the same title do not collide.
 
 ### P2
-- Populate `location` in `extract_listings` (the fixture has a location line
-  that is currently ignored).
-- `save_listings` mutates input dicts (`scraped_at`); copy instead.
+- Real pagination (DDproperty page 2+) behind a hard page cap, once live
+  behaviour can be checked; today one page per type is fetched.
+- Canonicalise listing URLs (strip query/fragment) before keying history.
 
-## Done in this pass
+## Done in this pass (pass 1)
 - Fixed `parents[4]` monorepo path lookup that raised `IndexError` in a
   standalone clone (both test modules failed to import); output now goes to
   `data/exported/`.
@@ -43,3 +38,16 @@ relies on a browser-like User-Agent and search-engine HTML fallbacks.
   mocks the page fetch, and `tests/conftest.py` blocks all sockets in tests.
 - Added `requirements.txt`, ruff/pytest config, CI, parser tests (5 -> 14);
   README rewritten to match behaviour; untracked committed `__pycache__`.
+
+## Done in this pass (pass 2)
+- Fixed price-drop alerts never firing: history was appended before
+  `detect_price_drops` read it, so the "old" price was always the current one.
+  `persist()` now detects first, then writes.
+- `main()` and `PropertyListingScraper.run()` share `collect()` /
+  `collect_type()` / `_search_fallback_listings()` / `persist()`; the
+  scheduler wrapper also gained `output_dir` and the dependency check.
+- Price history keyed by listing URL (new `url` column; legacy headers kept,
+  title fallback for old rows); `save_listings`/`detect_price_drops` no longer
+  mutate inputs; `extract_listings` fills `location` from short label lines.
+- `--max-pages` hidden and documented as ignored (one page per type).
+- `tests/test_property_runner_flow.py` (14 -> 20 tests).

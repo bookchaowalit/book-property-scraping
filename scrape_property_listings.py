@@ -75,7 +75,6 @@ DDPROPERTY_SEARCH = {
 }
 
 DEFAULT_TYPE = "condo_sale_bkk"
-DEFAULT_MAX_PAGES = 3
 
 
 def _load_runtime_env() -> None:
@@ -397,6 +396,15 @@ def extract_listings(markdown: str, listing_type: str) -> list:
         url_match = re.search(r'https?://\S+ddproperty\S+', line)
         if url_match:
             current_listing['url'] = url_match.group(0)
+        elif (
+            not is_detail
+            and not is_heading
+            and not line.startswith('http')
+            and len(line) <= 20
+            and not current_listing.get('location')
+        ):
+            # A short plain line inside a card is the area/district label.
+            current_listing['location'] = line
 
     # Don't forget last listing
     if current_listing.get('title') and current_listing.get('price'):
@@ -406,7 +414,7 @@ def extract_listings(markdown: str, listing_type: str) -> list:
 
 
 def save_listings(listings: list, output_dir: Path):
-    """Save listings to CSV."""
+    """Save listings to CSV (input dicts are not modified)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -420,19 +428,33 @@ def save_listings(listings: list, output_dir: Path):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for listing in listings:
-            listing["scraped_at"] = now
-            writer.writerow({k: listing.get(k, "") for k in fieldnames})
+            row = {k: listing.get(k, "") for k in fieldnames}
+            row["scraped_at"] = now
+            writer.writerow(row)
 
     print(f"  Saved {len(listings)} listings to {listings_file}")
 
 
+HISTORY_FIELDS = ["date", "title", "type", "price", "bedrooms", "area_sqm", "location", "url"]
+
+
 def append_history(listings: list, output_dir: Path):
-    """Append to history for price tracking."""
+    """Append to history for price tracking.
+
+    New files carry a ``url`` column so price drops can be keyed by listing
+    URL. An existing file keeps its original header so old rows stay aligned.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
     history_file = output_dir / "property_history.csv"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    file_exists = history_file.exists()
+    fieldnames = HISTORY_FIELDS
+    file_exists = history_file.exists() and history_file.stat().st_size > 0
+    if file_exists:
+        with open(history_file, "r", newline="", encoding="utf-8") as f:
+            header = next(csv.reader(f), None)
+        if header:
+            fieldnames = header
 
-    fieldnames = ["date", "title", "type", "price", "bedrooms", "area_sqm", "location"]
     rows = []
     for listing in listings:
         rows.append({
@@ -443,10 +465,11 @@ def append_history(listings: list, output_dir: Path):
             "bedrooms": listing.get("bedrooms", ""),
             "area_sqm": listing.get("area_sqm", ""),
             "location": listing.get("location", ""),
+            "url": listing.get("url", ""),
         })
 
     with open(history_file, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         if not file_exists:
             writer.writeheader()
         writer.writerows(rows)
@@ -454,17 +477,30 @@ def append_history(listings: list, output_dir: Path):
     print(f"  Appended {len(rows)} rows to {history_file}")
 
 
+def _history_key(row: dict):
+    url = (row.get("url") or "").strip()
+    if url:
+        return ("url", url)
+    title = (row.get("title") or "").strip()
+    return ("title", title) if title else None
+
+
 def detect_price_drops(current: list, history_file: Path, threshold_pct: float) -> list:
-    """Detect listings with significant price drops."""
+    """Detect listings whose price fell by at least ``threshold_pct``.
+
+    History is keyed by listing URL when known, so two units with the same
+    title do not collide; rows without a URL fall back to the title. Call this
+    *before* appending the current run to history, otherwise the latest
+    history price is the current price and no drop is ever found.
+    """
     if not history_file.exists():
         return []
 
-    # Load historical prices
     historical = {}
     with open(history_file, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            key = row.get("title", "")
+            key = _history_key(row)
             if key and row.get("price"):
                 try:
                     historical[key] = float(row["price"])
@@ -473,15 +509,16 @@ def detect_price_drops(current: list, history_file: Path, threshold_pct: float) 
 
     drops = []
     for listing in current:
-        title = listing.get("title", "")
         current_price = listing.get("price", 0)
-        if title in historical and historical[title] > 0 and current_price > 0:
-            old_price = historical[title]
+        key = _history_key(listing)
+        old_price = historical.get(key) if key else None
+        if old_price is None and key and key[0] == "url":
+            # Rows written before the url column existed are keyed by title.
+            old_price = historical.get(("title", (listing.get("title") or "").strip()))
+        if old_price and old_price > 0 and current_price > 0:
             drop_pct = ((old_price - current_price) / old_price) * 100
             if drop_pct >= threshold_pct:
-                listing["price_drop_pct"] = round(drop_pct, 1)
-                listing["old_price"] = old_price
-                drops.append(listing)
+                drops.append({**listing, "price_drop_pct": round(drop_pct, 1), "old_price": old_price})
 
     return drops
 
@@ -506,12 +543,92 @@ def print_summary(listings: list, drops: list = None):
             print(f"    -{drop['price_drop_pct']}% | {drop.get('title', '')[:40]} | ฿{drop.get('old_price', 0):,.0f} → ฿{drop.get('price', 0):,.0f}")
 
 
+PROPERTY_HOSTS = ("ddproperty.com", "propertyhub", "dotproperty")
+PRICE_HINT = re.compile(r'(\u0e3f[\d,]+|[\d,.]+\s*\u0e25\u0e49\u0e32\u0e19)')
+
+
+def _search_fallback_listings(listing_type: str) -> list:
+    """Build listings from search results when the direct page is empty."""
+    search_query = f"ddproperty {listing_type.replace('_', ' ')} thailand"
+    listings = []
+    for sr in google_search(search_query, limit=20):
+        sr_url = sr.get("url", "")
+        if not any(host in sr_url for host in PROPERTY_HOSTS):
+            continue
+        raw_title = sr.get("title", "")
+        clean_title = _clean_property_title(raw_title, sr_url)
+        if not clean_title:
+            continue
+        price_raw = ""
+        price = 0
+        price_match = PRICE_HINT.search(f"{raw_title} {sr.get('description', '')}")
+        if price_match:
+            price_raw = price_match.group(1)
+            price = parse_price(price_raw)
+        listings.append({
+            "title": clean_title,
+            "type": listing_type,
+            "url": sr_url,
+            "description": sr.get("description", ""),
+            "price_raw": price_raw,
+            "price": price,
+            "bedrooms": "",
+            "bathrooms": "",
+            "area_sqm": "",
+            "location": listing_type.split('_')[-1].title(),
+        })
+    return listings
+
+
+def collect_type(listing_type: str, url: str) -> list:
+    """Fetch one listing-type page, falling back to search when it is empty."""
+    markdown = free_scrape_url(url)
+    if markdown and len(markdown) >= 200:
+        return extract_listings(markdown, listing_type)
+    print("    Direct scrape failed/empty, using search fallback...")
+    return _search_fallback_listings(listing_type)
+
+
+def collect(types_to_scrape: dict, sleep=time.sleep) -> list:
+    """Collect every listing type with a pause between types; one failing
+    type is reported and skipped."""
+    all_listings = []
+    for index, (listing_type, url) in enumerate(types_to_scrape.items()):
+        if index:
+            sleep(TYPE_DELAY_SECONDS)
+        print(f"\n  Scraping {listing_type}: {url}")
+        try:
+            listings = collect_type(listing_type, url)
+        except Exception as e:
+            print(f"    ERROR: {type(e).__name__}: {e}")
+            continue
+        print(f"    Extracted {len(listings)} listings")
+        all_listings.extend(listings)
+    return all_listings
+
+
+def persist(all_listings: list, output_dir: Path, alert_drop_pct: float) -> list:
+    """Detect drops against prior history, then write snapshot and history."""
+    history_file = output_dir / "property_history.csv"
+    drops = detect_price_drops(all_listings, history_file, alert_drop_pct)
+    save_listings(all_listings, output_dir)
+    append_history(all_listings, output_dir)
+    print_summary(all_listings, drops)
+    return drops
+
+
+def _types_for(listing_type) -> dict:
+    if listing_type and listing_type in DDPROPERTY_SEARCH:
+        return {listing_type: DDPROPERTY_SEARCH[listing_type]}
+    return dict(DDPROPERTY_SEARCH)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Scrape property listings via free httpx+BS4")
     parser.add_argument("--type", default=None, choices=list(DDPROPERTY_SEARCH.keys()),
                         help="Listing type (default: scrape ALL types)")
-    parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES,
-                        help=f"Max pages to scrape per type (default: {DEFAULT_MAX_PAGES})")
+    # Accepted for backward compatibility only: one page per type is fetched.
+    parser.add_argument("--max-pages", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--alert-drop-pct", type=float, default=10.0,
                         help="Alert on price drops >= this %% (default: 10)")
     parser.add_argument("--output-dir", default=str(OUTPUT_DIR),
@@ -521,18 +638,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     output_dir = Path(args.output_dir)
-
-    # Determine which types to scrape
-    if args.type:
-        types_to_scrape = {args.type: DDPROPERTY_SEARCH[args.type]}
-    else:
-        types_to_scrape = DDPROPERTY_SEARCH
+    types_to_scrape = _types_for(args.type)
 
     if args.dry_run:
         print(json.dumps({
             "status": "dry-run",
             "types": list(types_to_scrape),
-            "max_pages": args.max_pages,
+            "pages_per_type": 1,
             "network": "not-used",
             "writes": "not-used",
         }, ensure_ascii=False, indent=2))
@@ -542,133 +654,41 @@ def main(argv=None):
     _require_live_dependencies()
 
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Property Listing Scraper")
-    print(f"  Types: {len(types_to_scrape)} | Max pages: {args.max_pages}")
+    print(f"  Types: {len(types_to_scrape)} | Pages per type: 1")
 
-    all_listings = []
-
-    for index, (listing_type, url) in enumerate(types_to_scrape.items()):
-        if index:
-            time.sleep(TYPE_DELAY_SECONDS)
-        print(f"\n  Scraping {listing_type}: {url}")
-        try:
-            markdown = free_scrape_url(url)
-
-            if not markdown or len(markdown) < 200:
-                print("    Direct scrape failed/empty, using Brave search...")
-                search_query = f"ddproperty {listing_type.replace('_', ' ')} thailand"
-                search_results = google_search(search_query, limit=20)
-                listings = []
-                for sr in search_results:
-                    sr_url = sr.get("url", "")
-                    # Only keep property site URLs
-                    if 'ddproperty.com' in sr_url or 'propertyhub' in sr_url or 'dotproperty' in sr_url:
-                        # Clean title from breadcrumb garbage
-                        raw_title = sr.get("title", "")
-                        clean_title = _clean_property_title(raw_title, sr_url)
-                        if not clean_title:
-                            continue
-                        # Extract price from title + description
-                        combined_text = f"{raw_title} {sr.get('description', '')}"
-                        price_raw = ""
-                        price = 0
-                        price_match = re.search(r'(\u0e3f[\d,]+|[\d,.]+\s*\u0e25\u0e49\u0e32\u0e19)', combined_text)
-                        if price_match:
-                            price_raw = price_match.group(1)
-                            price = parse_price(price_raw)
-                        listings.append({
-                            "title": clean_title,
-                            "type": listing_type,
-                            "url": sr_url,
-                            "description": sr.get("description", ""),
-                            "price_raw": price_raw,
-                            "price": price,
-                            "bedrooms": "",
-                            "bathrooms": "",
-                            "area_sqm": "",
-                            "location": listing_type.split('_')[-1].title(),
-                        })
-            else:
-                listings = extract_listings(markdown, listing_type)
-
-            print(f"    Extracted {len(listings)} listings")
-            all_listings.extend(listings)
-
-        except Exception as e:
-            print(f"    ERROR: {e}")
-            continue
-
+    all_listings = collect(types_to_scrape)
     print(f"\n  Total: {len(all_listings)} listings across {len(types_to_scrape)} categories")
 
-    # Save
     if all_listings:
-        save_listings(all_listings, output_dir)
-        append_history(all_listings, output_dir)
-
-        # Detect price drops
-        history_file = output_dir / "property_history.csv"
-        drops = detect_price_drops(all_listings, history_file, args.alert_drop_pct)
-        print_summary(all_listings, drops)
+        persist(all_listings, output_dir, args.alert_drop_pct)
     else:
         print("  No listings parsed (site structure may have changed)")
 
     print("\n  Done.")
+    return 0
 
 
 class PropertyListingScraper:
-    """Wrapper class for scheduler compatibility."""
-    def __init__(self, type=None, max_pages=None, alert_drop_pct=10.0, **kwargs):
+    """Wrapper class for scheduler compatibility.
+
+    ``max_pages`` is accepted for scheduler compatibility and ignored: the
+    runner fetches one page per listing type.
+    """
+
+    def __init__(self, type=None, max_pages=None, alert_drop_pct=10.0, output_dir=None, **kwargs):
         self.listing_type = type
-        self.max_pages = max_pages or 3
         self.alert_drop_pct = alert_drop_pct
+        self.output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
 
     async def run(self, **kwargs):
         _load_runtime_env()
-        print(f"[PropertyListingScraper] type={self.listing_type} | max_pages={self.max_pages}")
-        if self.listing_type and self.listing_type in DDPROPERTY_SEARCH:
-            types_to_scrape = {self.listing_type: DDPROPERTY_SEARCH[self.listing_type]}
-        else:
-            types_to_scrape = DDPROPERTY_SEARCH
-        all_listings = []
-        for index, (listing_type, url) in enumerate(types_to_scrape.items()):
-            if index:
-                time.sleep(TYPE_DELAY_SECONDS)
-            try:
-                markdown = free_scrape_url(url)
-                if markdown and len(markdown) > 200:
-                    listings = extract_listings(markdown, listing_type)
-                else:
-                    search_query = f"ddproperty {listing_type.replace('_', ' ')} thailand"
-                    search_results = google_search(search_query, limit=20)
-                    listings = []
-                    for sr in search_results:
-                        sr_url = sr.get('url', '')
-                        if 'ddproperty.com' in sr_url or 'propertyhub' in sr_url or 'dotproperty' in sr_url:
-                            raw_title = sr.get('title', '')
-                            clean_title = _clean_property_title(raw_title, sr_url)
-                            if clean_title:
-                                combined_text = f"{raw_title} {sr.get('description', '')}"
-                                price_raw = ''
-                                price = 0
-                                price_match = re.search(r'(\u0e3f[\d,]+|[\d,.]+\s*\u0e25\u0e49\u0e32\u0e19)', combined_text)
-                                if price_match:
-                                    price_raw = price_match.group(1)
-                                    price = parse_price(price_raw)
-                                listings.append({'title': clean_title, 'type': listing_type, 'url': sr_url,
-                                                 'description': sr.get('description', ''), 'price_raw': price_raw,
-                                                 'price': price, 'bedrooms': '', 'bathrooms': '', 'area_sqm': '',
-                                                 'location': listing_type.split('_')[-1].title()})
-                all_listings.extend(listings)
-            except Exception as e:
-                print(f"  Error scraping {listing_type}: {e}")
+        _require_live_dependencies()
+        print(f"[PropertyListingScraper] type={self.listing_type or 'all'}")
+        all_listings = collect(_types_for(self.listing_type))
         if all_listings:
-            output_dir = OUTPUT_DIR
-            save_listings(all_listings, output_dir)
-            append_history(all_listings, output_dir)
-            history_file = output_dir / 'property_history.csv'
-            detect_price_drops(all_listings, history_file, self.alert_drop_pct)
-            print_summary(all_listings)
+            persist(all_listings, self.output_dir, self.alert_drop_pct)
         return [{"source": "property_listings", "count": len(all_listings)}]
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
