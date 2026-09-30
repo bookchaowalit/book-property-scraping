@@ -26,24 +26,22 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    # Load .env from project root (5 levels up from this script)
-    _root = Path(__file__).resolve().parents[4]
-    load_dotenv(_root / ".env")
 except ImportError:
-    pass  # dotenv not required, but .env won't be auto-loaded
+    load_dotenv = None
+
+# Resolve the repository root without reading its environment file. Live
+# collection loads dotenv only after the caller has explicitly skipped dry-run.
+_root = Path(__file__).resolve().parents[4]
 
 try:
     import httpx
 except ImportError:
-    print("ERROR: httpx required. Install: pip install httpx")
-    sys.exit(1)
+    httpx = None
 
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4", "-q"])
-    from bs4 import BeautifulSoup
+    BeautifulSoup = None
 
 ROOT = Path(__file__).resolve().parents[4]  # solo-empire/
 OUTPUT_DIR = ROOT / "domains" / "book-real-estate" / "data"
@@ -75,6 +73,16 @@ DDPROPERTY_SEARCH = {
 
 DEFAULT_TYPE = "condo_sale_bkk"
 DEFAULT_MAX_PAGES = 3
+
+
+def _load_runtime_env() -> None:
+    if load_dotenv is not None:
+        load_dotenv(_root / ".env")
+
+
+def _require_live_dependencies() -> None:
+    if httpx is None or BeautifulSoup is None:
+        raise RuntimeError("httpx and beautifulsoup4 are required for live property collection")
 
 
 def _is_valid_url(url: str) -> bool:
@@ -112,6 +120,7 @@ def _clean_property_title(raw_title: str, url: str = "") -> str:
 def _brave_search(query: str, limit: int = 20) -> list:
     """Search via Brave Search (no API key needed, works from VPS IPs).
     Falls back to Bing if Brave is rate-limited."""
+    _require_live_dependencies()
     import urllib.parse
     try:
         url = f"https://search.brave.com/search?q={query.replace(' ', '+')}"
@@ -170,6 +179,7 @@ def _decode_bing_redirect(href: str) -> str:
 
 def _bing_search(query: str, limit: int = 20) -> list:
     """Fallback search via Bing when Brave is rate-limited."""
+    _require_live_dependencies()
     try:
         url = f"https://www.bing.com/search?q={query.replace(' ', '+')}"
         resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}, timeout=15, follow_redirects=True)
@@ -202,6 +212,7 @@ def _bing_search(query: str, limit: int = 20) -> list:
 
 def free_scrape_url(url: str) -> str:
     """Scrape a URL with free httpx+BS4 and return markdown-like content."""
+    _require_live_dependencies()
     try:
         resp = httpx.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
         resp.raise_for_status()
@@ -227,6 +238,7 @@ def free_scrape_url(url: str) -> str:
 
 def _firecrawl_search(query: str, limit: int = 20) -> list:
     """Fallback search via Firecrawl API when Google fails."""
+    _require_live_dependencies()
     api_key = os.environ.get("FIRECRAWL_API_KEY", "")
     if not api_key:
         return []
@@ -488,7 +500,7 @@ def print_summary(listings: list, drops: list = None):
             print(f"    -{drop['price_drop_pct']}% | {drop.get('title', '')[:40]} | ฿{drop.get('old_price', 0):,.0f} → ฿{drop.get('price', 0):,.0f}")
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Scrape property listings via free httpx+BS4")
     parser.add_argument("--type", default=None, choices=list(DDPROPERTY_SEARCH.keys()),
                         help=f"Listing type (default: scrape ALL types)")
@@ -498,7 +510,9 @@ def main():
                         help="Alert on price drops >= this %% (default: 10)")
     parser.add_argument("--output-dir", default=str(OUTPUT_DIR),
                         help="Output directory")
-    args = parser.parse_args()
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Print the bounded plan without collection or writes")
+    args = parser.parse_args(argv)
 
     output_dir = Path(args.output_dir)
 
@@ -507,6 +521,19 @@ def main():
         types_to_scrape = {args.type: DDPROPERTY_SEARCH[args.type]}
     else:
         types_to_scrape = DDPROPERTY_SEARCH
+
+    if args.dry_run:
+        print(json.dumps({
+            "status": "dry-run",
+            "types": list(types_to_scrape),
+            "max_pages": args.max_pages,
+            "network": "not-used",
+            "writes": "not-used",
+        }, ensure_ascii=False, indent=2))
+        return 0
+
+    _load_runtime_env()
+    _require_live_dependencies()
 
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Property Listing Scraper")
     print(f"  Types: {len(types_to_scrape)} | Max pages: {args.max_pages}")
@@ -587,6 +614,7 @@ class PropertyListingScraper:
         self.alert_drop_pct = alert_drop_pct
 
     async def run(self, **kwargs):
+        _load_runtime_env()
         print(f"[PropertyListingScraper] type={self.listing_type} | max_pages={self.max_pages}")
         if self.listing_type and self.listing_type in DDPROPERTY_SEARCH:
             types_to_scrape = {self.listing_type: DDPROPERTY_SEARCH[self.listing_type]}
