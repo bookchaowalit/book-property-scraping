@@ -29,7 +29,10 @@ class DDPropertyScraperTests(unittest.TestCase):
         markdown = FIXTURE.read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as temp_dir:
             scraper = DDPropertyScraper(output_dir=temp_dir)
-            with patch("property.ddproperty_scraper.source.free_scrape_url", return_value=markdown):
+            # Simulate the search page being unavailable so the markdown
+            # fallback runs; no request leaves the test process.
+            with patch("property.ddproperty_scraper.fetch_search_html", side_effect=OSError("offline")), \
+                    patch("property.ddproperty_scraper.source.free_scrape_url", return_value=markdown):
                 result = asyncio.run(scraper.run())
 
             self.assertEqual(result[0]["source"], "ddproperty_condos")

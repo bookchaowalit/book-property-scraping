@@ -39,5 +39,7 @@ relies on a browser-like User-Agent and search-engine HTML fallbacks.
 - Fixed DDproperty search fallback reading `snippet` while search helpers
   return `description` (price hints were always missed).
 - 2 s pause between listing types; bare `except` narrowed.
+- `test_run_writes_dedicated_snapshot` made a live DDproperty request; it now
+  mocks the page fetch, and `tests/conftest.py` blocks all sockets in tests.
 - Added `requirements.txt`, ruff/pytest config, CI, parser tests (5 -> 14);
   README rewritten to match behaviour; untracked committed `__pycache__`.
