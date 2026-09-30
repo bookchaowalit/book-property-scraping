@@ -2,7 +2,7 @@
 
 ## Current state
 
-Score: **5.5/10** (pass 1: 2 -> 5; pass 2: 5 -> 5.5) — the CLI and scheduler
+Score: **6/10** (pass 1: 2 -> 5; pass 2: 5 -> 5.5; pass 3: 5.5 -> 6) — the CLI and scheduler
 paths share one tested collect/persist flow and price-drop alerts actually
 work, but live collection still relies on a browser-like User-Agent and
 search-engine HTML fallbacks.
@@ -23,7 +23,6 @@ search-engine HTML fallbacks.
 ### P2
 - Real pagination (DDproperty page 2+) behind a hard page cap, once live
   behaviour can be checked; today one page per type is fetched.
-- Canonicalise listing URLs (strip query/fragment) before keying history.
 
 ## Done in this pass (pass 1)
 - Fixed `parents[4]` monorepo path lookup that raised `IndexError` in a
@@ -51,3 +50,15 @@ search-engine HTML fallbacks.
   mutate inputs; `extract_listings` fills `location` from short label lines.
 - `--max-pages` hidden and documented as ignored (one page per type).
 - `tests/test_property_runner_flow.py` (14 -> 20 tests).
+
+## Done in this pass (pass 3)
+- `property/atomic_io.py`: `property_listings.csv`, `ddproperty_condos.csv`
+  and the price history are written atomically; history "append" rewrites old
+  + new so a killed run cannot leave a torn row (header of legacy files kept).
+- `canonical_listing_url()` keys price history (was P2): lower-case host, no
+  fragment/trailing slash/tracking params, sorted query; legacy rows with
+  tracking params still match on read.
+- `--alert-drop-pct` validated to (0, 100] in the CLI and scheduler wrapper;
+  `--output-dir` must not be a file.
+- User-Agent and search-engine fallbacks untouched (owner decisions P0/P1).
+- `tests/test_property_persistence.py` (20 -> 38 tests incl. parametrised).

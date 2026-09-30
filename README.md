@@ -32,7 +32,11 @@ type; `--max-pages` / `max_pages` are still accepted for scheduler
 compatibility but ignored. Price drops are detected against the previous
 history (before the current run is appended) and keyed by listing URL, falling
 back to the title for rows written before `property_history.csv` had a `url`
-column.
+column. URLs are canonicalised for that key (lower-case host, no fragment,
+trailing slash or `utm_*`/`fbclid`/`gclid`-style tracking parameters), so the
+same listing reached via different links keeps one history. All CSVs are
+written atomically (`property/atomic_io.py`: temp file + fsync +
+`os.replace`); `--alert-drop-pct` must be in (0, 100].
 
 ## Crawling behaviour (honest)
 

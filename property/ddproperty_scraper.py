@@ -7,7 +7,6 @@ index. Collection uses the public Thai condo-rent search page and parses
 
 from __future__ import annotations
 
-import csv
 import json
 import re
 from datetime import datetime, timezone
@@ -17,6 +16,8 @@ from urllib.parse import urldefrag, urlsplit, urlunsplit
 
 import httpx
 from bs4 import BeautifulSoup
+
+from property.atomic_io import render_csv, write_text_atomic
 
 try:
     from scripts import scrape_property_listings as source
@@ -265,15 +266,9 @@ class DDPropertyScraper:
         return listings or self._fallback_search()
 
     def _write_snapshot(self, listings: list[dict[str, Any]], scraped_at: str) -> Path:
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         snapshot_path = self.output_dir / "ddproperty_condos.csv"
-        with snapshot_path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=FIELDNAMES, extrasaction="ignore")
-            writer.writeheader()
-            for listing in listings:
-                row = {field: listing.get(field, "") for field in FIELDNAMES}
-                row["scraped_at"] = scraped_at
-                writer.writerow(row)
+        rows = [{**{field: listing.get(field, "") for field in FIELDNAMES}, "scraped_at": scraped_at} for listing in listings]
+        write_text_atomic(snapshot_path, render_csv(rows, FIELDNAMES))
         return snapshot_path
 
     async def run(self, **_: Any) -> list[dict[str, Any]]:

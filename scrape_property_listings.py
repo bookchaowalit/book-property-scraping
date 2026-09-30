@@ -22,6 +22,9 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from property.atomic_io import render_csv, write_text_atomic
 
 try:
     from dotenv import load_dotenv
@@ -414,8 +417,7 @@ def extract_listings(markdown: str, listing_type: str) -> list:
 
 
 def save_listings(listings: list, output_dir: Path):
-    """Save listings to CSV (input dicts are not modified)."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    """Save listings to CSV atomically (input dicts are not modified)."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     listings_file = output_dir / "property_listings.csv"
@@ -424,13 +426,12 @@ def save_listings(listings: list, output_dir: Path):
         "bedrooms", "bathrooms", "area_sqm", "location", "description"
     ]
 
-    with open(listings_file, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for listing in listings:
-            row = {k: listing.get(k, "") for k in fieldnames}
-            row["scraped_at"] = now
-            writer.writerow(row)
+    rows = []
+    for listing in listings:
+        row = {k: listing.get(k, "") for k in fieldnames}
+        row["scraped_at"] = now
+        rows.append(row)
+    write_text_atomic(listings_file, render_csv(rows, fieldnames))
 
     print(f"  Saved {len(listings)} listings to {listings_file}")
 
@@ -444,7 +445,6 @@ def append_history(listings: list, output_dir: Path):
     New files carry a ``url`` column so price drops can be keyed by listing
     URL. An existing file keeps its original header so old rows stay aligned.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
     history_file = output_dir / "property_history.csv"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     fieldnames = HISTORY_FIELDS
@@ -465,20 +465,47 @@ def append_history(listings: list, output_dir: Path):
             "bedrooms": listing.get("bedrooms", ""),
             "area_sqm": listing.get("area_sqm", ""),
             "location": listing.get("location", ""),
-            "url": listing.get("url", ""),
+            "url": canonical_listing_url(listing.get("url", "")),
         })
 
-    with open(history_file, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        if not file_exists:
-            writer.writeheader()
-        writer.writerows(rows)
+    # Rewrite old + new atomically: a killed run can never leave a torn row.
+    existing = history_file.read_text(encoding="utf-8") if file_exists else ""
+    if existing and not existing.endswith("\n"):
+        existing += "\r\n"
+    write_text_atomic(history_file, existing + render_csv(rows, fieldnames, header=not file_exists))
 
     print(f"  Appended {len(rows)} rows to {history_file}")
 
 
+TRACKING_PARAMS = frozenset({"fbclid", "gclid", "dclid", "msclkid", "yclid", "ref", "ref_src", "igshid", "mc_cid", "mc_eid"})
+
+
+def canonical_listing_url(url: str) -> str:
+    """Stable key for one listing URL.
+
+    Lower-cases scheme and host, drops the fragment, a trailing slash and
+    tracking parameters (``utm_*``, ``fbclid``, ``gclid``...), and sorts the
+    remaining query so the same listing seen via different links keeps one
+    price history. Non-HTTP(S) or unparseable values are returned stripped.
+    """
+    value = (url or "").strip()
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return value
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        return value
+    query = sorted(
+        (key, val)
+        for key, val in parse_qsl(parts.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_") and key.lower() not in TRACKING_PARAMS
+    )
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, urlencode(query), ""))
+
+
 def _history_key(row: dict):
-    url = (row.get("url") or "").strip()
+    url = canonical_listing_url(row.get("url") or "")
     if url:
         return ("url", url)
     title = (row.get("title") or "").strip()
@@ -607,8 +634,17 @@ def collect(types_to_scrape: dict, sleep=time.sleep) -> list:
     return all_listings
 
 
+def validate_drop_pct(value) -> float:
+    """``--alert-drop-pct`` must be a finite percentage in (0, 100]."""
+    pct = float(value)
+    if not 0 < pct <= 100:
+        raise ValueError("alert_drop_pct must be greater than 0 and at most 100")
+    return pct
+
+
 def persist(all_listings: list, output_dir: Path, alert_drop_pct: float) -> list:
     """Detect drops against prior history, then write snapshot and history."""
+    alert_drop_pct = validate_drop_pct(alert_drop_pct)
     history_file = output_dir / "property_history.csv"
     drops = detect_price_drops(all_listings, history_file, alert_drop_pct)
     save_listings(all_listings, output_dir)
@@ -636,8 +672,14 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true",
                         help="Print the bounded plan without collection or writes")
     args = parser.parse_args(argv)
+    try:
+        validate_drop_pct(args.alert_drop_pct)
+    except ValueError:
+        parser.error("--alert-drop-pct must be greater than 0 and at most 100")
 
     output_dir = Path(args.output_dir)
+    if output_dir.exists() and not output_dir.is_dir():
+        parser.error(f"--output-dir is not a directory: {output_dir}")
     types_to_scrape = _types_for(args.type)
 
     if args.dry_run:
@@ -677,7 +719,7 @@ class PropertyListingScraper:
 
     def __init__(self, type=None, max_pages=None, alert_drop_pct=10.0, output_dir=None, **kwargs):
         self.listing_type = type
-        self.alert_drop_pct = alert_drop_pct
+        self.alert_drop_pct = validate_drop_pct(alert_drop_pct)
         self.output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
 
     async def run(self, **kwargs):
