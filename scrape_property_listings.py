@@ -3,16 +3,15 @@
 Scrape property listings from DDproperty via free httpx+BS4.
 Tracks new listings, price changes, and investment opportunities.
 
-Outputs:
-    - domains/money/assets/book-real-estate/data/property_listings.csv (latest)
-    - domains/money/assets/book-real-estate/data/property_history.csv (appended)
+Outputs (under this repository's git-ignored data/ directory):
+    - data/exported/property_listings.csv (latest)
+    - data/exported/property_history.csv (appended)
     - Console alerts for price drops >10%
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_property_listings.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_property_listings.py --type condo --max-price 5000000
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_property_listings.py --area bangkok --bedrooms 1,2
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_property_listings.py --alert-drop-pct 10
+    python3 scrape_property_listings.py --dry-run
+    python3 scrape_property_listings.py --type condo_sale_bkk
+    python3 scrape_property_listings.py --alert-drop-pct 10
 """
 
 import argparse
@@ -20,7 +19,7 @@ import csv
 import json
 import os
 import re
-import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -31,7 +30,9 @@ except ImportError:
 
 # Resolve the repository root without reading its environment file. Live
 # collection loads dotenv only after the caller has explicitly skipped dry-run.
-_root = Path(__file__).resolve().parents[4]
+# This file lives at the repository root, so no parent walking is needed (the
+# old monorepo ``parents[4]`` lookup raised IndexError in a standalone clone).
+_root = Path(__file__).resolve().parent
 
 try:
     import httpx
@@ -43,8 +44,10 @@ try:
 except ImportError:
     BeautifulSoup = None
 
-ROOT = Path(__file__).resolve().parents[4]  # solo-empire/
-OUTPUT_DIR = ROOT / "domains" / "book-real-estate" / "data"
+ROOT = _root
+OUTPUT_DIR = ROOT / "data" / "exported"
+# Pause between listing types so a full run does not burst 12 requests.
+TYPE_DELAY_SECONDS = 2.0
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
@@ -172,7 +175,7 @@ def _decode_bing_redirect(href: str) -> str:
                 padded = b64_part + '=' * (4 - len(b64_part) % 4) if len(b64_part) % 4 else b64_part
                 return base64.b64decode(padded).decode('utf-8', errors='ignore')
             return urllib.parse.unquote(u_val)
-    except:
+    except (ValueError, UnicodeDecodeError):
         pass
     return href
 
@@ -350,14 +353,18 @@ def extract_listings(markdown: str, listing_type: str) -> list:
         if not line:
             continue
 
-        # Price detection
         price_match = re.search(r'(฿[\d,]+|[\d,.]+\s*ล้าน)', line)
-        if price_match and current_listing.get('title'):
-            current_listing['price_raw'] = price_match.group(1)
-            current_listing['price'] = parse_price(price_match.group(1))
+        bed_match = re.search(r'(\d+)\s*(bed|ห้องนอน)', line, re.IGNORECASE)
+        bath_match = re.search(r'(\d+)\s*(bath|ห้องน้ำ)', line, re.IGNORECASE)
+        area_match = re.search(r'([\d,.]+)\s*(sqm|sq\.?m|ตร\.?ม)', line, re.IGNORECASE)
+        is_detail = bool(price_match or bed_match or bath_match or area_match)
 
-        # Title/heading detection
-        if line.startswith('#') or (len(line) > 20 and len(line) < 200 and not line.startswith('http')):
+        # Title/heading detection. A long un-headed line only starts a new
+        # listing when it is not a price/room/area detail line, otherwise
+        # "฿5,500,000 · 2 beds · 65 sqm" would split one listing in two.
+        is_heading = line.startswith('#')
+        is_long_text = 20 < len(line) < 200 and not line.startswith('http') and not is_detail
+        if is_heading or is_long_text:
             if current_listing.get('title') and current_listing.get('price'):
                 listings.append(current_listing)
             current_listing = {
@@ -373,17 +380,16 @@ def extract_listings(markdown: str, listing_type: str) -> list:
                 'description': '',
             }
 
-        # Bedroom/bathroom detection
-        bed_match = re.search(r'(\d+)\s*(bed|ห้องนอน)', line, re.IGNORECASE)
+        if not current_listing.get('title'):
+            continue
+
+        if price_match and not current_listing.get('price'):
+            current_listing['price_raw'] = price_match.group(1)
+            current_listing['price'] = parse_price(price_match.group(1))
         if bed_match:
             current_listing['bedrooms'] = bed_match.group(1)
-
-        bath_match = re.search(r'(\d+)\s*(bath|ห้องน้ำ)', line, re.IGNORECASE)
         if bath_match:
             current_listing['bathrooms'] = bath_match.group(1)
-
-        # Area detection
-        area_match = re.search(r'([\d,.]+)\s*(sqm|sq\.?m|ตร\.?ม)', line, re.IGNORECASE)
         if area_match:
             current_listing['area_sqm'] = area_match.group(1)
 
@@ -503,7 +509,7 @@ def print_summary(listings: list, drops: list = None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Scrape property listings via free httpx+BS4")
     parser.add_argument("--type", default=None, choices=list(DDPROPERTY_SEARCH.keys()),
-                        help=f"Listing type (default: scrape ALL types)")
+                        help="Listing type (default: scrape ALL types)")
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES,
                         help=f"Max pages to scrape per type (default: {DEFAULT_MAX_PAGES})")
     parser.add_argument("--alert-drop-pct", type=float, default=10.0,
@@ -540,13 +546,15 @@ def main(argv=None):
 
     all_listings = []
 
-    for listing_type, url in types_to_scrape.items():
+    for index, (listing_type, url) in enumerate(types_to_scrape.items()):
+        if index:
+            time.sleep(TYPE_DELAY_SECONDS)
         print(f"\n  Scraping {listing_type}: {url}")
         try:
             markdown = free_scrape_url(url)
 
             if not markdown or len(markdown) < 200:
-                print(f"    Direct scrape failed/empty, using Brave search...")
+                print("    Direct scrape failed/empty, using Brave search...")
                 search_query = f"ddproperty {listing_type.replace('_', ' ')} thailand"
                 search_results = google_search(search_query, limit=20)
                 listings = []
@@ -621,7 +629,9 @@ class PropertyListingScraper:
         else:
             types_to_scrape = DDPROPERTY_SEARCH
         all_listings = []
-        for listing_type, url in types_to_scrape.items():
+        for index, (listing_type, url) in enumerate(types_to_scrape.items()):
+            if index:
+                time.sleep(TYPE_DELAY_SECONDS)
             try:
                 markdown = free_scrape_url(url)
                 if markdown and len(markdown) > 200:

@@ -20,10 +20,37 @@ Python
 ```bash
 # From this repository root
 python3 -m venv .venv && source .venv/bin/activate
-# Install whatever deps the script imports (often requests/httpx/bs4).
-# Prefer reading the scraper module docstring/imports first — no lockfile yet.
-python3 scrape_property_listings.py
+pip install -r requirements.txt
+python3 scrape_property_listings.py --dry-run              # plan only, no network or writes
+python3 scrape_property_listings.py --type condo_sale_bkk  # live, writes data/exported/
 ```
+
+Output goes to this repository's git-ignored `data/exported/`
+(`property_listings.csv`, `property_history.csv`; the DDproperty adapter writes
+`ddproperty_condos.csv`). `--max-pages` is recorded in the plan but the
+generic runner currently fetches one page per listing type.
+
+## Crawling behaviour (honest)
+
+- Every request has a timeout (15-30 s); the generic runner waits 2 s between
+  listing types.
+- There is no retry/backoff or robots.txt check yet, and requests still send a
+  browser-like `User-Agent`; see `docs/UPGRADE-PLAN.md`.
+- When the direct page is empty, the runner falls back to scraping Brave/Bing
+  (and Google) result pages, or Firecrawl when `FIRECRAWL_API_KEY` is set in
+  the environment. Search-engine HTML scraping is against those engines' terms;
+  treat it as prototype-only.
+
+## Checks (offline)
+
+```bash
+pip install -r requirements.txt pytest ruff
+ruff check .
+python -m pytest -q
+```
+
+Tests replay `tests/fixtures/` and mocked search results only; CI
+(`.github/workflows/ci.yml`) runs the same commands.
 
 ## Boundaries
 

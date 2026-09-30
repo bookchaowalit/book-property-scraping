@@ -233,7 +233,9 @@ class DDPropertyScraper:
             url = str(result.get("url") or "")
             if "ddproperty.com" not in url or "/property/" not in url:
                 continue
-            text = f"{result.get('title', '')} {result.get('snippet', '')}"
+            # Search helpers return the snippet under "description".
+            snippet = result.get("description") or result.get("snippet") or ""
+            text = f"{result.get('title', '')} {snippet}"
             price = _fallback_price(text)
             if price is None:
                 continue
