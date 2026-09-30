@@ -17,6 +17,7 @@ Usage:
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import time
@@ -320,26 +321,56 @@ def google_search(query: str, limit: int = 20) -> list:
     return results
 
 
+def _grouped_number(text: str) -> float | None:
+    """Parse "1,299", "1,299.50", "1.234.567", "1,5" or "1.234,56"; None if no digits.
+
+    With both separators the last one is the decimal point; a single comma
+    followed by one or two digits is a decimal comma; repeated separators of
+    one kind are thousands groups.
+    """
+    text = text.strip(",.")
+    if not text:
+        return None
+    commas, dots = text.count(","), text.count(".")
+    if commas and dots:
+        decimal = "," if text.rfind(",") > text.rfind(".") else "."
+        thousands = "." if decimal == "," else ","
+        if text.count(decimal) > 1:
+            return None
+        text = text.replace(thousands, "").replace(decimal, ".")
+    elif commas:
+        head, _, tail = text.partition(",")
+        text = f"{head}.{tail}" if commas == 1 and len(tail) in (1, 2) else text.replace(",", "")
+    elif dots > 1:
+        text = text.replace(".", "")
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
 def parse_price(price_str: str) -> float:
-    """Extract numeric price from Thai format (e.g., '฿5,000,000' or '5 ล้านบาท')."""
+    """Extract numeric price from Thai format (e.g., '฿5,000,000' or '5 ล้านบาท').
+
+    Returns 0.0 when no price is present; separator-only text such as
+    "... ล้านบาท" used to raise ``ValueError`` and abort the whole listing type.
+    """
     if not price_str:
         return 0.0
 
-    # Remove currency symbols and whitespace
-    clean = re.sub(r'[฿$,€\s]', '', price_str)
-
     # Handle ล้าน (million)
     if 'ล้าน' in price_str:
-        match = re.search(r'([\d,.]+)\s*ล้าน', price_str)
-        if match:
-            return float(match.group(1).replace(',', '')) * 1_000_000
+        match = re.search(r'(\d[\d,.]*)\s*ล้าน', price_str)
+        number = _grouped_number(match.group(1)) if match else None
+        if number is not None:
+            return number * 1_000_000
 
-    # Handle plain numbers
-    match = re.search(r'[\d,]+\.?\d*', clean)
-    if match:
-        return float(match.group().replace(',', ''))
-
-    return 0.0
+    # Handle plain numbers (currency symbols and spaces removed)
+    clean = re.sub(r'[฿$€\s]', '', price_str)
+    match = re.search(r'\d[\d,.]*', clean)
+    number = _grouped_number(match.group()) if match else None
+    return number if number is not None else 0.0
 
 
 def extract_listings(markdown: str, listing_type: str) -> list:

@@ -66,3 +66,10 @@ search-engine HTML fallbacks.
   `_price_value` rejects NaN/inf (NaN slipped past `max_price`); search
   fallback keeps only results whose host is a portal or its subdomain
   (`is_property_host`), not any URL that mentions one in its query string.
+- Number edge cases: `parse_price` raised `ValueError` on separator-only
+  text before "ล้าน" ("ราคาเริ่มต้น... ล้านบาท"), which aborted the whole
+  listing type in `collect`; "1.234.567 บาท" parsed as 1.234 and "1,5 ล้าน"
+  as 15,000,000. It now uses `_grouped_number` (decimal separator detection,
+  finite only). `DDPropertyScraper(max_price="nan")` is rejected instead of
+  silently disabling the price filter. Regression tests in
+  `tests/test_property_parsers.py`.

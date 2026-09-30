@@ -23,6 +23,22 @@ class ParsePriceTests(unittest.TestCase):
         self.assertEqual(source.parse_price(""), 0.0)
         self.assertEqual(source.parse_price("contact agent"), 0.0)
 
+    def test_separator_only_text_does_not_crash(self):
+        # "... ล้านบาท" used to raise ValueError and drop the whole listing type.
+        self.assertEqual(source.parse_price("ราคาเริ่มต้น... ล้านบาท"), 0.0)
+        self.assertEqual(source.parse_price("ราคา . ล้าน"), 0.0)
+
+    def test_grouping_and_decimal_separators(self):
+        self.assertEqual(source.parse_price("1.234.567 บาท"), 1_234_567)
+        self.assertEqual(source.parse_price("1,5 ล้าน"), 1_500_000)
+        self.assertEqual(source.parse_price("๕.๕ ล้าน"), 5_500_000)
+        self.assertEqual(source.parse_price("25,000 - 30,000 บาท"), 25_000)
+
+    def test_non_finite_max_price_is_rejected(self):
+        for bound in ("nan", "inf"):
+            with self.assertRaises(ValueError):
+                DDPropertyScraper(max_price=bound)
+
 
 class ExtractListingsTests(unittest.TestCase):
     def test_long_detail_line_does_not_split_a_listing(self):

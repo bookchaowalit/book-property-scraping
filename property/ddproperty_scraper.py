@@ -215,6 +215,9 @@ class DDPropertyScraper:
         self.listing_type = "condo_rent_bkk" if type in {"condo", "condo_rent_bkk"} else type
         self.max_pages = max(1, int(max_pages or 1))
         self.max_price = float(max_price) if max_price not in (None, "") else None
+        if self.max_price is not None and not math.isfinite(self.max_price):
+            # NaN would compare False and silently disable the price filter.
+            raise ValueError("max_price must be a finite number")
         self.output_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
 
     @staticmethod
