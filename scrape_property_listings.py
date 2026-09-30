@@ -570,7 +570,22 @@ def print_summary(listings: list, drops: list = None):
             print(f"    -{drop['price_drop_pct']}% | {drop.get('title', '')[:40]} | ฿{drop.get('old_price', 0):,.0f} → ฿{drop.get('price', 0):,.0f}")
 
 
-PROPERTY_HOSTS = ("ddproperty.com", "propertyhub", "dotproperty")
+PROPERTY_HOSTS = ("ddproperty.com", "propertyhub.in.th", "dotproperty.co.th")
+
+
+def is_property_host(url: str) -> bool:
+    """True when ``url``'s host is a known portal or one of its subdomains.
+
+    A substring test accepted lookalike hosts and any URL that merely
+    mentioned a portal in its path or query string.
+    """
+    try:
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return any(host == h or host.endswith("." + h) for h in PROPERTY_HOSTS)
+
+
 PRICE_HINT = re.compile(r'(\u0e3f[\d,]+|[\d,.]+\s*\u0e25\u0e49\u0e32\u0e19)')
 
 
@@ -580,7 +595,7 @@ def _search_fallback_listings(listing_type: str) -> list:
     listings = []
     for sr in google_search(search_query, limit=20):
         sr_url = sr.get("url", "")
-        if not any(host in sr_url for host in PROPERTY_HOSTS):
+        if not is_property_host(sr_url):
             continue
         raw_title = sr.get("title", "")
         clean_title = _clean_property_title(raw_title, sr_url)

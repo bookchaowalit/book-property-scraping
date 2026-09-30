@@ -62,3 +62,7 @@ search-engine HTML fallbacks.
   `--output-dir` must not be a file.
 - User-Agent and search-engine fallbacks untouched (owner decisions P0/P1).
 - `tests/test_property_persistence.py` (20 -> 38 tests incl. parametrised).
+- Bug-pattern sweep (`tests/test_bug_pattern_sweep.py`, 4 tests): ddproperty
+  `_price_value` rejects NaN/inf (NaN slipped past `max_price`); search
+  fallback keeps only results whose host is a portal or its subdomain
+  (`is_property_host`), not any URL that mentions one in its query string.
