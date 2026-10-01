@@ -7,8 +7,8 @@ index. Collection uses the public Thai condo-rent search page and parses
 
 from __future__ import annotations
 
-import csv
 import json
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +17,8 @@ from urllib.parse import urldefrag, urlsplit, urlunsplit
 
 import httpx
 from bs4 import BeautifulSoup
+
+from property.atomic_io import render_csv, write_text_atomic
 
 try:
     from scripts import scrape_property_listings as source
@@ -55,9 +57,12 @@ def _price_value(value: Any) -> float | None:
     if value is None or value == "":
         return None
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return source.parse_price(str(value))
+    # float() accepts "nan"/"inf": NaN compares False against max_price, so it
+    # would slip through the price filter. Treat non-finite prices as unknown.
+    return number if math.isfinite(number) else None
 
 
 def _fallback_price(text: str) -> float | None:
@@ -210,6 +215,9 @@ class DDPropertyScraper:
         self.listing_type = "condo_rent_bkk" if type in {"condo", "condo_rent_bkk"} else type
         self.max_pages = max(1, int(max_pages or 1))
         self.max_price = float(max_price) if max_price not in (None, "") else None
+        if self.max_price is not None and not math.isfinite(self.max_price):
+            # NaN would compare False and silently disable the price filter.
+            raise ValueError("max_price must be a finite number")
         self.output_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
 
     @staticmethod
@@ -233,7 +241,9 @@ class DDPropertyScraper:
             url = str(result.get("url") or "")
             if "ddproperty.com" not in url or "/property/" not in url:
                 continue
-            text = f"{result.get('title', '')} {result.get('snippet', '')}"
+            # Search helpers return the snippet under "description".
+            snippet = result.get("description") or result.get("snippet") or ""
+            text = f"{result.get('title', '')} {snippet}"
             price = _fallback_price(text)
             if price is None:
                 continue
@@ -263,15 +273,9 @@ class DDPropertyScraper:
         return listings or self._fallback_search()
 
     def _write_snapshot(self, listings: list[dict[str, Any]], scraped_at: str) -> Path:
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         snapshot_path = self.output_dir / "ddproperty_condos.csv"
-        with snapshot_path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=FIELDNAMES, extrasaction="ignore")
-            writer.writeheader()
-            for listing in listings:
-                row = {field: listing.get(field, "") for field in FIELDNAMES}
-                row["scraped_at"] = scraped_at
-                writer.writerow(row)
+        rows = [{**{field: listing.get(field, "") for field in FIELDNAMES}, "scraped_at": scraped_at} for listing in listings]
+        write_text_atomic(snapshot_path, render_csv(rows, FIELDNAMES))
         return snapshot_path
 
     async def run(self, **_: Any) -> list[dict[str, Any]]:
