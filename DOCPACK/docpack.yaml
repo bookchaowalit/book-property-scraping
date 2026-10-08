@@ -1,0 +1,8 @@
+system_id: bookchaowalit/book-apps/tools/book-property-scraping
+prefix: CARD
+brand: "BOOK PROPERTY SCRAPING"
+subtitle: "ต้นแบบติดตามประกาศคอนโดและแจ้งราคาลด จาก DDProperty"
+footer: "Book Property Scraping — Product Card"
+color: "#2f4b6e"
+audience: internal
+tier: L0
