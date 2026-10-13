@@ -1,7 +1,7 @@
 # book-property-scraping
 
 **Tier:** C / tool prototype (portfolio breadth, not interview flagship)  
-**Owner path:** `bookchaowalit/book-apps/tools/book-property-scraping`
+**Owner path:** `bookchaowalit/book-apps/tools/realestate-property-scraper`
 
 ## Purpose
 
