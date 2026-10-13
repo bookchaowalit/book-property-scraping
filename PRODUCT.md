@@ -1,6 +1,6 @@
 # book-property-scraping — Product brief
 
-**Slug:** `bookchaowalit/book-property-scraping`  
+**Slug:** `bookchaowalit/realestate-property-scraper`  
 **Generated:** 2026-08-11 (bulk Book Dev closeout)  
 **Status:** collection adapter present; scheduler still runs from `book-job-scraping`
 
