@@ -1,6 +1,6 @@
 # book-property-scraping — Product brief
 
-**Slug:** `bookchaowalit/realestate-property-scraper`  
+**Slug:** `bookchaowalit/book-property-scraping`  
 **Generated:** 2026-08-11 (bulk Book Dev closeout)  
 **Status:** collection adapter present; scheduler still runs from `book-job-scraping`
 
@@ -33,7 +33,7 @@ pass Cloudflare. Collection scheduling remains in `book-job-scraping`.
 # book-property-scraping
 
 **Tier:** C / tool prototype (portfolio breadth, not interview flagship)  
-**Owner path:** `bookchaowalit/book-apps/tools/realestate-property-scraper`
+**Owner path:** `bookchaowalit/book-apps/tools/book-property-scraping`
 
 ## Purpose
 
