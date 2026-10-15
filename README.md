@@ -66,6 +66,29 @@ Tests replay `tests/fixtures/` and mocked search results only; CI
 - **Not** coupled to Solo Empire monorepo runtime. Nested Git repo; commit only inside this tree.
 - Never commit `.env`, cookies, session dumps, or scraped PII dumps to Git.
 
+## Source terms decision (2026-10-15)
+
+**property.v1 stays draft/pending (owner decision 2026-10-15, BOO-129).** Terms
+are reviewed source by source:
+
+- **DDproperty:** unlicensed automated collection is not approved. Its
+  advertising rules prohibit unauthorised bots, crawling and data mining. The
+  search-HTML fallback and "metadata is accessible" are **not** an exception for
+  DDproperty.
+- **Brave Search API:** no plan/order granting durable storage rights is
+  evidenced, so no new persistent result payload. Such an order would not cover
+  destination pages or contact data.
+- **ENNXO, PropertyHub, LivingInsider, Zmyhome, TG Condo:** each still needs its
+  own terms review; none is cleared.
+- **PDPA:** contact purpose, legal basis, retention and deletion still need an
+  operator/controller decision. No phone/email/LINE/individual contact use is
+  approved.
+
+This is an owner decision based on the published terms, not legal advice. Record: [architecture-docs `systems/ai-data/source-terms-decisions-2026-10-15.md`](https://github.com/bookchaowalit/architecture-docs/blob/main/systems/ai-data/source-terms-decisions-2026-10-15.md).
+Sources: [DDproperty advertising rules](https://www.ddproperty.com/en/advertising-rules),
+[Brave Search API terms](https://api-dashboard.search.brave.com/documentation/resources/terms-of-service),
+[Brave API storage FAQ](https://brave.com/search/api/).
+
 ## Limitations (honest)
 
 Listing sites often ban scraping. Research/prototype only. No claim of live MLS integration.
