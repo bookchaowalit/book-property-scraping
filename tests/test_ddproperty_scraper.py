@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from property.ddproperty_scraper import DDPropertyScraper, _fallback_price, parse_next_data
+from property.ddproperty_scraper import (
+    DDPropertyScraper,
+    _fallback_price,
+    parse_next_data,
+)
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "ddproperty_condo_rent.md"
@@ -31,8 +35,16 @@ class DDPropertyScraperTests(unittest.TestCase):
             scraper = DDPropertyScraper(output_dir=temp_dir)
             # Simulate the search page being unavailable so the markdown
             # fallback runs; no request leaves the test process.
-            with patch("property.ddproperty_scraper.fetch_search_html", side_effect=OSError("offline")), \
-                    patch("property.ddproperty_scraper.source.free_scrape_url", return_value=markdown):
+            with (
+                patch(
+                    "property.ddproperty_scraper.fetch_search_html",
+                    side_effect=OSError("offline"),
+                ),
+                patch(
+                    "property.ddproperty_scraper.source.free_scrape_url",
+                    return_value=markdown,
+                ),
+            ):
                 result = asyncio.run(scraper.run())
 
             self.assertEqual(result[0]["source"], "ddproperty_condos")
@@ -59,4 +71,3 @@ class DDPropertyScraperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

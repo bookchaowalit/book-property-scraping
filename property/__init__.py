@@ -1,2 +1,1 @@
 """Property source adapters."""
-

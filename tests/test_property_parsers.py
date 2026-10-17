@@ -52,16 +52,21 @@ class ExtractListingsTests(unittest.TestCase):
             ]
         )
         listings = source.extract_listings(markdown, "condo_sale_bkk")
-        self.assertEqual([item["title"] for item in listings], [
-            "Rhythm Sukhumvit 42 high floor",
-            "Life Asoke corner unit with view",
-        ])
+        self.assertEqual(
+            [item["title"] for item in listings],
+            [
+                "Rhythm Sukhumvit 42 high floor",
+                "Life Asoke corner unit with view",
+            ],
+        )
         first, second = listings
         self.assertEqual(first["price"], 5_500_000)
         self.assertEqual(first["bedrooms"], "2")
         self.assertEqual(first["bathrooms"], "2")
         self.assertEqual(first["area_sqm"], "65")
-        self.assertEqual(first["url"], "https://www.ddproperty.com/en/property/rhythm-42-111")
+        self.assertEqual(
+            first["url"], "https://www.ddproperty.com/en/property/rhythm-42-111"
+        )
         self.assertEqual(second["price"], 3_200_000)
         self.assertEqual(second["bedrooms"], "1")
 
@@ -73,7 +78,9 @@ class ExtractListingsTests(unittest.TestCase):
 class HelperTests(unittest.TestCase):
     def test_clean_property_title_strips_breadcrumbs(self):
         self.assertEqual(
-            source._clean_property_title("DDProperty › Condo for Sale › Bangkok › Noble Ploenchit"),
+            source._clean_property_title(
+                "DDProperty › Condo for Sale › Bangkok › Noble Ploenchit"
+            ),
             "Noble Ploenchit",
         )
         self.assertEqual(
@@ -86,7 +93,10 @@ class HelperTests(unittest.TestCase):
         encoded = base64.b64encode(target.encode()).decode().rstrip("=")
         href = f"https://www.bing.com/ck/a?!&&p=abc&u=a1{encoded}&ntb=1"
         self.assertEqual(source._decode_bing_redirect(href), target)
-        self.assertEqual(source._decode_bing_redirect("https://example.com/x"), "https://example.com/x")
+        self.assertEqual(
+            source._decode_bing_redirect("https://example.com/x"),
+            "https://example.com/x",
+        )
 
     def test_invalid_urls_rejected(self):
         self.assertFalse(source._is_valid_url("/relative"))
@@ -99,9 +109,16 @@ class HelperTests(unittest.TestCase):
             with history.open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=["date", "title", "price"])
                 writer.writeheader()
-                writer.writerow({"date": "2026-09-01", "title": "Unit A", "price": "5000000"})
-                writer.writerow({"date": "2026-09-01", "title": "Unit B", "price": "not-a-number"})
-            current = [{"title": "Unit A", "price": 4_000_000}, {"title": "Unit B", "price": 1}]
+                writer.writerow(
+                    {"date": "2026-09-01", "title": "Unit A", "price": "5000000"}
+                )
+                writer.writerow(
+                    {"date": "2026-09-01", "title": "Unit B", "price": "not-a-number"}
+                )
+            current = [
+                {"title": "Unit A", "price": 4_000_000},
+                {"title": "Unit B", "price": 1},
+            ]
             drops = source.detect_price_drops(current, history, 10)
         self.assertEqual(len(drops), 1)
         self.assertEqual(drops[0]["price_drop_pct"], 20.0)
@@ -119,7 +136,11 @@ class FallbackSearchTests(unittest.TestCase):
                 "url": "https://www.ddproperty.com/en/property/asok-1",
                 "description": "1 bed ฿18,000/month near BTS",
             },
-            {"title": "Off-site", "url": "https://example.com/property/2", "description": "฿1"},
+            {
+                "title": "Off-site",
+                "url": "https://example.com/property/2",
+                "description": "฿1",
+            },
         ]
         with patch.object(source, "google_search", return_value=results):
             listings = DDPropertyScraper(max_price=30000)._fallback_search()

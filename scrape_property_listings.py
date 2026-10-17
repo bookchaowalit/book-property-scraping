@@ -53,13 +53,21 @@ OUTPUT_DIR = ROOT / "data" / "exported"
 # Pause between listing types so a full run does not burst 12 requests.
 TYPE_DELAY_SECONDS = 2.0
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+}
 
 # URLs that indicate garbage/CAPTCHA/consent pages
 _GARBAGE_URL_PATTERNS = [
-    'google.com', 'youtube.com', 'consent.google', 'policies.google',
-    '/httpservice/retry/', '/search?q=', 'accounts.google',
-    'duckduckgo.com', 'wikipedia.org',
+    "google.com",
+    "youtube.com",
+    "consent.google",
+    "policies.google",
+    "/httpservice/retry/",
+    "/search?q=",
+    "accounts.google",
+    "duckduckgo.com",
+    "wikipedia.org",
 ]
 
 # DDproperty search URL patterns — multiple regions + types
@@ -88,38 +96,47 @@ def _load_runtime_env() -> None:
 
 def _require_live_dependencies() -> None:
     if httpx is None or BeautifulSoup is None:
-        raise RuntimeError("httpx and beautifulsoup4 are required for live property collection")
+        raise RuntimeError(
+            "httpx and beautifulsoup4 are required for live property collection"
+        )
 
 
 def _is_valid_url(url: str) -> bool:
     """Reject garbage/CAPTCHA/consent/internal URLs."""
-    if not url or url.startswith('/'):
+    if not url or url.startswith("/"):
         return False
     return not any(pat in url for pat in _GARBAGE_URL_PATTERNS)
 
 
 def _clean_property_title(raw_title: str, url: str = "") -> str:
     """Clean breadcrumb garbage from search result titles used as property titles.
-    
+
     Examples: 'DDProperty › Condo for Sale › Bangkok › Luxury Condo Name'
     or 'ddproperty.com - Condo for Sale in Bangkok | Property Name'
     """
     if not raw_title:
         return ""
     # Strip breadcrumb separators: take everything after the last '›' or '»'
-    for sep in ['\u203a', '\u00bb']:
+    for sep in ["\u203a", "\u00bb"]:
         if sep in raw_title:
             parts = raw_title.split(sep)
             raw_title = parts[-1].strip()
             break
     # Strip 'site.com - ' prefix
-    raw_title = re.sub(r'^[a-z0-9.-]+\.com\s*[-\u2013\u2014|]\s*', '', raw_title, flags=re.IGNORECASE)
+    raw_title = re.sub(
+        r"^[a-z0-9.-]+\.com\s*[-\u2013\u2014|]\s*", "", raw_title, flags=re.IGNORECASE
+    )
     title = raw_title.strip()
     # If still too long or empty, try URL slug
     if (len(title) > 80 or not title) and url:
-        slug = url.rstrip('/').split('/')[-1]
-        if slug and not slug.startswith('?') and not slug.startswith('#') and slug != 'thailand':
-            title = slug.replace('-', ' ').replace('_', ' ').title()
+        slug = url.rstrip("/").split("/")[-1]
+        if (
+            slug
+            and not slug.startswith("?")
+            and not slug.startswith("#")
+            and slug != "thailand"
+        ):
+            title = slug.replace("-", " ").replace("_", " ").title()
     return title[:100] if title else ""
 
 
@@ -128,26 +145,34 @@ def _brave_search(query: str, limit: int = 20) -> list:
     Falls back to Bing if Brave is rate-limited."""
     _require_live_dependencies()
     import urllib.parse
+
     try:
         url = f"https://search.brave.com/search?q={query.replace(' ', '+')}"
-        resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}, timeout=15, follow_redirects=True)
+        resp = httpx.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+            },
+            timeout=15,
+            follow_redirects=True,
+        )
         if resp.status_code == 429:
             return _bing_search(query, limit)
         if resp.status_code != 200:
             return _bing_search(query, limit)
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        soup = BeautifulSoup(resp.text, "html.parser")
         results = []
-        for el in soup.find_all(attrs={'data-pos': True}):
-            a_tag = el.find('a', class_='result-header') or el.find('a')
+        for el in soup.find_all(attrs={"data-pos": True}):
+            a_tag = el.find("a", class_="result-header") or el.find("a")
             if not a_tag:
                 continue
-            href = a_tag.get('href', '')
-            if 'click_url=' in href:
-                href = urllib.parse.unquote(href.split('click_url=')[1].split('&')[0])
+            href = a_tag.get("href", "")
+            if "click_url=" in href:
+                href = urllib.parse.unquote(href.split("click_url=")[1].split("&")[0])
             title = a_tag.get_text(strip=True)
-            desc_el = el.find(class_='snippet-description') or el.find('p', class_='')
+            desc_el = el.find(class_="snippet-description") or el.find("p", class_="")
             desc = desc_el.get_text(strip=True)[:200] if desc_el else ""
-            if title and href and href.startswith('http') and _is_valid_url(href):
+            if title and href and href.startswith("http") and _is_valid_url(href):
                 results.append({"title": title[:200], "url": href, "description": desc})
             if len(results) >= limit:
                 break
@@ -164,19 +189,24 @@ def _decode_bing_redirect(href: str) -> str:
     """Decode Bing redirect URL to get actual destination URL."""
     import urllib.parse
     import base64
-    if 'bing.com/ck/' not in href or 'u=' not in href:
+
+    if "bing.com/ck/" not in href or "u=" not in href:
         return href
     try:
         parsed = urllib.parse.urlparse(href)
         params = urllib.parse.parse_qs(parsed.query)
-        if 'u' in params:
-            u_val = params['u'][0]
+        if "u" in params:
+            u_val = params["u"][0]
             # Remove 'a1' prefix and decode base64
-            if u_val.startswith('a1'):
+            if u_val.startswith("a1"):
                 b64_part = u_val[2:]
                 # Add padding if needed
-                padded = b64_part + '=' * (4 - len(b64_part) % 4) if len(b64_part) % 4 else b64_part
-                return base64.b64decode(padded).decode('utf-8', errors='ignore')
+                padded = (
+                    b64_part + "=" * (4 - len(b64_part) % 4)
+                    if len(b64_part) % 4
+                    else b64_part
+                )
+                return base64.b64decode(padded).decode("utf-8", errors="ignore")
             return urllib.parse.unquote(u_val)
     except (ValueError, UnicodeDecodeError):
         pass
@@ -188,23 +218,30 @@ def _bing_search(query: str, limit: int = 20) -> list:
     _require_live_dependencies()
     try:
         url = f"https://www.bing.com/search?q={query.replace(' ', '+')}"
-        resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}, timeout=15, follow_redirects=True)
+        resp = httpx.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+            },
+            timeout=15,
+            follow_redirects=True,
+        )
         if resp.status_code != 200:
             return []
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        soup = BeautifulSoup(resp.text, "html.parser")
         results = []
-        for li in soup.find_all('li', class_='b_algo'):
-            a_tag = li.find('h2')
+        for li in soup.find_all("li", class_="b_algo"):
+            a_tag = li.find("h2")
             if not a_tag:
                 continue
-            a_link = a_tag.find('a', href=True)
+            a_link = a_tag.find("a", href=True)
             if not a_link:
                 continue
-            href = _decode_bing_redirect(a_link['href'])
+            href = _decode_bing_redirect(a_link["href"])
             title = a_link.get_text(strip=True)
-            desc_el = li.find('p')
+            desc_el = li.find("p")
             desc = desc_el.get_text(strip=True)[:200] if desc_el else ""
-            if title and href and href.startswith('http') and _is_valid_url(href):
+            if title and href and href.startswith("http") and _is_valid_url(href):
                 results.append({"title": title[:200], "url": href, "description": desc})
             if len(results) >= limit:
                 break
@@ -222,20 +259,27 @@ def free_scrape_url(url: str) -> str:
     try:
         resp = httpx.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        for tag in soup.find_all(['script', 'style', 'nav', 'footer', 'aside', 'header']):
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup.find_all(
+            ["script", "style", "nav", "footer", "aside", "header"]
+        ):
             tag.decompose()
-        main = soup.find('main') or soup.find('article') or soup.find(id=re.compile(r'content|main', re.I)) or soup.body
+        main = (
+            soup.find("main")
+            or soup.find("article")
+            or soup.find(id=re.compile(r"content|main", re.I))
+            or soup.body
+        )
         if not main:
             return resp.text[:10000]
-        for heading in main.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        for heading in main.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
             level = int(heading.name[1])
             heading.string = f"\n{'#' * level} {heading.get_text(strip=True)}\n"
-        for bold in main.find_all(['strong', 'b']):
+        for bold in main.find_all(["strong", "b"]):
             bold.string = f"**{bold.get_text(strip=True)}**"
-        for link in main.find_all('a', href=True):
+        for link in main.find_all("a", href=True):
             link.string = f"[{link.get_text(strip=True)}]({link['href']})"
-        text = main.get_text(separator='\n', strip=True)
+        text = main.get_text(separator="\n", strip=True)
         return text[:15000]
     except Exception as e:
         print(f"[WARN] Scrape error for {url}: {e}")
@@ -297,10 +341,10 @@ def google_search(query: str, limit: int = 20) -> list:
         resp = httpx.get(google_url, headers=HEADERS, timeout=15, follow_redirects=True)
         if resp.status_code != 200:
             return []
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        for a_tag in soup.find_all('a', href=True):
-            href = a_tag['href']
-            m = re.search(r'/url\?q=(https?://[^&]+)', href)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+            m = re.search(r"/url\?q=(https?://[^&]+)", href)
             if m:
                 url = m.group(1)
             else:
@@ -309,11 +353,13 @@ def google_search(query: str, limit: int = 20) -> list:
                 continue
             title = a_tag.get_text(strip=True)
             if title and len(title) > 3:
-                results.append({
-                    "url": url,
-                    "title": title[:200],
-                    "description": "",
-                })
+                results.append(
+                    {
+                        "url": url,
+                        "title": title[:200],
+                        "description": "",
+                    }
+                )
             if len(results) >= limit:
                 break
     except Exception as e:
@@ -340,7 +386,11 @@ def _grouped_number(text: str) -> float | None:
         text = text.replace(thousands, "").replace(decimal, ".")
     elif commas:
         head, _, tail = text.partition(",")
-        text = f"{head}.{tail}" if commas == 1 and len(tail) in (1, 2) else text.replace(",", "")
+        text = (
+            f"{head}.{tail}"
+            if commas == 1 and len(tail) in (1, 2)
+            else text.replace(",", "")
+        )
     elif dots > 1:
         text = text.replace(".", "")
     try:
@@ -360,15 +410,15 @@ def parse_price(price_str: str) -> float:
         return 0.0
 
     # Handle ล้าน (million)
-    if 'ล้าน' in price_str:
-        match = re.search(r'(\d[\d,.]*)\s*ล้าน', price_str)
+    if "ล้าน" in price_str:
+        match = re.search(r"(\d[\d,.]*)\s*ล้าน", price_str)
         number = _grouped_number(match.group(1)) if match else None
         if number is not None:
             return number * 1_000_000
 
     # Handle plain numbers (currency symbols and spaces removed)
-    clean = re.sub(r'[฿$€\s]', '', price_str)
-    match = re.search(r'\d[\d,.]*', clean)
+    clean = re.sub(r"[฿$€\s]", "", price_str)
+    match = re.search(r"\d[\d,.]*", clean)
     number = _grouped_number(match.group()) if match else None
     return number if number is not None else 0.0
 
@@ -378,7 +428,7 @@ def extract_listings(markdown: str, listing_type: str) -> list:
     listings = []
 
     # Split by listing patterns (DDproperty uses various separators)
-    lines = markdown.split('\n')
+    lines = markdown.split("\n")
     current_listing = {}
 
     for line in lines:
@@ -386,62 +436,64 @@ def extract_listings(markdown: str, listing_type: str) -> list:
         if not line:
             continue
 
-        price_match = re.search(r'(฿[\d,]+|[\d,.]+\s*ล้าน)', line)
-        bed_match = re.search(r'(\d+)\s*(bed|ห้องนอน)', line, re.IGNORECASE)
-        bath_match = re.search(r'(\d+)\s*(bath|ห้องน้ำ)', line, re.IGNORECASE)
-        area_match = re.search(r'([\d,.]+)\s*(sqm|sq\.?m|ตร\.?ม)', line, re.IGNORECASE)
+        price_match = re.search(r"(฿[\d,]+|[\d,.]+\s*ล้าน)", line)
+        bed_match = re.search(r"(\d+)\s*(bed|ห้องนอน)", line, re.IGNORECASE)
+        bath_match = re.search(r"(\d+)\s*(bath|ห้องน้ำ)", line, re.IGNORECASE)
+        area_match = re.search(r"([\d,.]+)\s*(sqm|sq\.?m|ตร\.?ม)", line, re.IGNORECASE)
         is_detail = bool(price_match or bed_match or bath_match or area_match)
 
         # Title/heading detection. A long un-headed line only starts a new
         # listing when it is not a price/room/area detail line, otherwise
         # "฿5,500,000 · 2 beds · 65 sqm" would split one listing in two.
-        is_heading = line.startswith('#')
-        is_long_text = 20 < len(line) < 200 and not line.startswith('http') and not is_detail
+        is_heading = line.startswith("#")
+        is_long_text = (
+            20 < len(line) < 200 and not line.startswith("http") and not is_detail
+        )
         if is_heading or is_long_text:
-            if current_listing.get('title') and current_listing.get('price'):
+            if current_listing.get("title") and current_listing.get("price"):
                 listings.append(current_listing)
             current_listing = {
-                'title': line.lstrip('#').strip(),
-                'type': listing_type,
-                'url': '',
-                'price_raw': '',
-                'price': 0,
-                'bedrooms': '',
-                'bathrooms': '',
-                'area_sqm': '',
-                'location': '',
-                'description': '',
+                "title": line.lstrip("#").strip(),
+                "type": listing_type,
+                "url": "",
+                "price_raw": "",
+                "price": 0,
+                "bedrooms": "",
+                "bathrooms": "",
+                "area_sqm": "",
+                "location": "",
+                "description": "",
             }
 
-        if not current_listing.get('title'):
+        if not current_listing.get("title"):
             continue
 
-        if price_match and not current_listing.get('price'):
-            current_listing['price_raw'] = price_match.group(1)
-            current_listing['price'] = parse_price(price_match.group(1))
+        if price_match and not current_listing.get("price"):
+            current_listing["price_raw"] = price_match.group(1)
+            current_listing["price"] = parse_price(price_match.group(1))
         if bed_match:
-            current_listing['bedrooms'] = bed_match.group(1)
+            current_listing["bedrooms"] = bed_match.group(1)
         if bath_match:
-            current_listing['bathrooms'] = bath_match.group(1)
+            current_listing["bathrooms"] = bath_match.group(1)
         if area_match:
-            current_listing['area_sqm'] = area_match.group(1)
+            current_listing["area_sqm"] = area_match.group(1)
 
         # URL detection
-        url_match = re.search(r'https?://\S+ddproperty\S+', line)
+        url_match = re.search(r"https?://\S+ddproperty\S+", line)
         if url_match:
-            current_listing['url'] = url_match.group(0)
+            current_listing["url"] = url_match.group(0)
         elif (
             not is_detail
             and not is_heading
-            and not line.startswith('http')
+            and not line.startswith("http")
             and len(line) <= 20
-            and not current_listing.get('location')
+            and not current_listing.get("location")
         ):
             # A short plain line inside a card is the area/district label.
-            current_listing['location'] = line
+            current_listing["location"] = line
 
     # Don't forget last listing
-    if current_listing.get('title') and current_listing.get('price'):
+    if current_listing.get("title") and current_listing.get("price"):
         listings.append(current_listing)
 
     return listings
@@ -453,8 +505,17 @@ def save_listings(listings: list, output_dir: Path):
 
     listings_file = output_dir / "property_listings.csv"
     fieldnames = [
-        "scraped_at", "title", "type", "url", "price_raw", "price",
-        "bedrooms", "bathrooms", "area_sqm", "location", "description"
+        "scraped_at",
+        "title",
+        "type",
+        "url",
+        "price_raw",
+        "price",
+        "bedrooms",
+        "bathrooms",
+        "area_sqm",
+        "location",
+        "description",
     ]
 
     rows = []
@@ -467,7 +528,16 @@ def save_listings(listings: list, output_dir: Path):
     print(f"  Saved {len(listings)} listings to {listings_file}")
 
 
-HISTORY_FIELDS = ["date", "title", "type", "price", "bedrooms", "area_sqm", "location", "url"]
+HISTORY_FIELDS = [
+    "date",
+    "title",
+    "type",
+    "price",
+    "bedrooms",
+    "area_sqm",
+    "location",
+    "url",
+]
 
 
 def append_history(listings: list, output_dir: Path):
@@ -488,27 +558,44 @@ def append_history(listings: list, output_dir: Path):
 
     rows = []
     for listing in listings:
-        rows.append({
-            "date": now,
-            "title": listing.get("title", ""),
-            "type": listing.get("type", ""),
-            "price": listing.get("price", 0),
-            "bedrooms": listing.get("bedrooms", ""),
-            "area_sqm": listing.get("area_sqm", ""),
-            "location": listing.get("location", ""),
-            "url": canonical_listing_url(listing.get("url", "")),
-        })
+        rows.append(
+            {
+                "date": now,
+                "title": listing.get("title", ""),
+                "type": listing.get("type", ""),
+                "price": listing.get("price", 0),
+                "bedrooms": listing.get("bedrooms", ""),
+                "area_sqm": listing.get("area_sqm", ""),
+                "location": listing.get("location", ""),
+                "url": canonical_listing_url(listing.get("url", "")),
+            }
+        )
 
     # Rewrite old + new atomically: a killed run can never leave a torn row.
     existing = history_file.read_text(encoding="utf-8") if file_exists else ""
     if existing and not existing.endswith("\n"):
         existing += "\r\n"
-    write_text_atomic(history_file, existing + render_csv(rows, fieldnames, header=not file_exists))
+    write_text_atomic(
+        history_file, existing + render_csv(rows, fieldnames, header=not file_exists)
+    )
 
     print(f"  Appended {len(rows)} rows to {history_file}")
 
 
-TRACKING_PARAMS = frozenset({"fbclid", "gclid", "dclid", "msclkid", "yclid", "ref", "ref_src", "igshid", "mc_cid", "mc_eid"})
+TRACKING_PARAMS = frozenset(
+    {
+        "fbclid",
+        "gclid",
+        "dclid",
+        "msclkid",
+        "yclid",
+        "ref",
+        "ref_src",
+        "igshid",
+        "mc_cid",
+        "mc_eid",
+    }
+)
 
 
 def canonical_listing_url(url: str) -> str:
@@ -532,7 +619,9 @@ def canonical_listing_url(url: str) -> str:
         if not key.lower().startswith("utm_") and key.lower() not in TRACKING_PARAMS
     )
     path = parts.path.rstrip("/") or "/"
-    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, urlencode(query), ""))
+    return urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), path, urlencode(query), "")
+    )
 
 
 def _history_key(row: dict):
@@ -576,7 +665,13 @@ def detect_price_drops(current: list, history_file: Path, threshold_pct: float) 
         if old_price and old_price > 0 and current_price > 0:
             drop_pct = ((old_price - current_price) / old_price) * 100
             if drop_pct >= threshold_pct:
-                drops.append({**listing, "price_drop_pct": round(drop_pct, 1), "old_price": old_price})
+                drops.append(
+                    {
+                        **listing,
+                        "price_drop_pct": round(drop_pct, 1),
+                        "old_price": old_price,
+                    }
+                )
 
     return drops
 
@@ -590,15 +685,21 @@ def print_summary(listings: list, drops: list = None):
     print(f"\n  Found {len(listings)} listings:")
     for listing in listings[:10]:
         price = listing.get("price", 0)
-        price_str = f"฿{price:,.0f}" if price >= 1000 else listing.get("price_raw", "N/A")
-        beds = f"{listing.get('bedrooms', '?')} bed" if listing.get('bedrooms') else ""
-        area = f"{listing.get('area_sqm', '?')} sqm" if listing.get('area_sqm') else ""
-        print(f"    {price_str:>15} | {beds:>8} | {area:>10} | {listing.get('title', '')[:40]}")
+        price_str = (
+            f"฿{price:,.0f}" if price >= 1000 else listing.get("price_raw", "N/A")
+        )
+        beds = f"{listing.get('bedrooms', '?')} bed" if listing.get("bedrooms") else ""
+        area = f"{listing.get('area_sqm', '?')} sqm" if listing.get("area_sqm") else ""
+        print(
+            f"    {price_str:>15} | {beds:>8} | {area:>10} | {listing.get('title', '')[:40]}"
+        )
 
     if drops:
         print(f"\n  PRICE DROPS ({len(drops)}):")
         for drop in drops:
-            print(f"    -{drop['price_drop_pct']}% | {drop.get('title', '')[:40]} | ฿{drop.get('old_price', 0):,.0f} → ฿{drop.get('price', 0):,.0f}")
+            print(
+                f"    -{drop['price_drop_pct']}% | {drop.get('title', '')[:40]} | ฿{drop.get('old_price', 0):,.0f} → ฿{drop.get('price', 0):,.0f}"
+            )
 
 
 PROPERTY_HOSTS = ("ddproperty.com", "propertyhub.in.th", "dotproperty.co.th")
@@ -617,7 +718,7 @@ def is_property_host(url: str) -> bool:
     return any(host == h or host.endswith("." + h) for h in PROPERTY_HOSTS)
 
 
-PRICE_HINT = re.compile(r'(\u0e3f[\d,]+|[\d,.]+\s*\u0e25\u0e49\u0e32\u0e19)')
+PRICE_HINT = re.compile(r"(\u0e3f[\d,]+|[\d,.]+\s*\u0e25\u0e49\u0e32\u0e19)")
 
 
 def _search_fallback_listings(listing_type: str) -> list:
@@ -638,18 +739,20 @@ def _search_fallback_listings(listing_type: str) -> list:
         if price_match:
             price_raw = price_match.group(1)
             price = parse_price(price_raw)
-        listings.append({
-            "title": clean_title,
-            "type": listing_type,
-            "url": sr_url,
-            "description": sr.get("description", ""),
-            "price_raw": price_raw,
-            "price": price,
-            "bedrooms": "",
-            "bathrooms": "",
-            "area_sqm": "",
-            "location": listing_type.split('_')[-1].title(),
-        })
+        listings.append(
+            {
+                "title": clean_title,
+                "type": listing_type,
+                "url": sr_url,
+                "description": sr.get("description", ""),
+                "price_raw": price_raw,
+                "price": price,
+                "bedrooms": "",
+                "bathrooms": "",
+                "area_sqm": "",
+                "location": listing_type.split("_")[-1].title(),
+            }
+        )
     return listings
 
 
@@ -706,17 +809,31 @@ def _types_for(listing_type) -> dict:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Scrape property listings via free httpx+BS4")
-    parser.add_argument("--type", default=None, choices=list(DDPROPERTY_SEARCH.keys()),
-                        help="Listing type (default: scrape ALL types)")
+    parser = argparse.ArgumentParser(
+        description="Scrape property listings via free httpx+BS4"
+    )
+    parser.add_argument(
+        "--type",
+        default=None,
+        choices=list(DDPROPERTY_SEARCH.keys()),
+        help="Listing type (default: scrape ALL types)",
+    )
     # Accepted for backward compatibility only: one page per type is fetched.
     parser.add_argument("--max-pages", type=int, default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--alert-drop-pct", type=float, default=10.0,
-                        help="Alert on price drops >= this %% (default: 10)")
-    parser.add_argument("--output-dir", default=str(OUTPUT_DIR),
-                        help="Output directory")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print the bounded plan without collection or writes")
+    parser.add_argument(
+        "--alert-drop-pct",
+        type=float,
+        default=10.0,
+        help="Alert on price drops >= this %% (default: 10)",
+    )
+    parser.add_argument(
+        "--output-dir", default=str(OUTPUT_DIR), help="Output directory"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the bounded plan without collection or writes",
+    )
     args = parser.parse_args(argv)
     try:
         validate_drop_pct(args.alert_drop_pct)
@@ -729,13 +846,19 @@ def main(argv=None):
     types_to_scrape = _types_for(args.type)
 
     if args.dry_run:
-        print(json.dumps({
-            "status": "dry-run",
-            "types": list(types_to_scrape),
-            "pages_per_type": 1,
-            "network": "not-used",
-            "writes": "not-used",
-        }, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "status": "dry-run",
+                    "types": list(types_to_scrape),
+                    "pages_per_type": 1,
+                    "network": "not-used",
+                    "writes": "not-used",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
 
     _load_runtime_env()
@@ -745,7 +868,9 @@ def main(argv=None):
     print(f"  Types: {len(types_to_scrape)} | Pages per type: 1")
 
     all_listings = collect(types_to_scrape)
-    print(f"\n  Total: {len(all_listings)} listings across {len(types_to_scrape)} categories")
+    print(
+        f"\n  Total: {len(all_listings)} listings across {len(types_to_scrape)} categories"
+    )
 
     if all_listings:
         persist(all_listings, output_dir, args.alert_drop_pct)
@@ -763,7 +888,9 @@ class PropertyListingScraper:
     runner fetches one page per listing type.
     """
 
-    def __init__(self, type=None, max_pages=None, alert_drop_pct=10.0, output_dir=None, **kwargs):
+    def __init__(
+        self, type=None, max_pages=None, alert_drop_pct=10.0, output_dir=None, **kwargs
+    ):
         self.listing_type = type
         self.alert_drop_pct = validate_drop_pct(alert_drop_pct)
         self.output_dir = Path(output_dir) if output_dir else OUTPUT_DIR

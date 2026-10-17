@@ -14,7 +14,9 @@ class NetworkAccessBlocked(RuntimeError):
 
 
 def _blocked(*_args, **_kwargs):
-    raise NetworkAccessBlocked("network access is disabled in tests; use fixtures or mocks")
+    raise NetworkAccessBlocked(
+        "network access is disabled in tests; use fixtures or mocks"
+    )
 
 
 @pytest.fixture(autouse=True)

@@ -16,8 +16,12 @@ sys.path.insert(0, str(ROOT))
 import scrape_property_listings as source  # noqa: E402
 from property.atomic_io import write_text_atomic  # noqa: E402
 
-LISTING = {"title": "Condo A", "type": "condo_rent_bkk", "price": 20000.0,
-           "url": "https://WWW.ddproperty.com/listing/a-1/?utm_source=x&fbclid=y#photos"}
+LISTING = {
+    "title": "Condo A",
+    "type": "condo_rent_bkk",
+    "price": 20000.0,
+    "url": "https://WWW.ddproperty.com/listing/a-1/?utm_source=x&fbclid=y#photos",
+}
 
 
 def _rows(path: Path) -> list[dict]:
@@ -28,8 +32,10 @@ def _rows(path: Path) -> list[dict]:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("https://WWW.ddproperty.com/listing/a-1/?utm_source=x&fbclid=y#photos",
-         "https://www.ddproperty.com/listing/a-1"),
+        (
+            "https://WWW.ddproperty.com/listing/a-1/?utm_source=x&fbclid=y#photos",
+            "https://www.ddproperty.com/listing/a-1",
+        ),
         ("https://site.example/p?b=2&a=1&gclid=z", "https://site.example/p?a=1&b=2"),
         ("https://site.example/", "https://site.example/"),
         ("  not a url  ", "not a url"),
@@ -45,7 +51,11 @@ def test_history_stores_canonical_url_and_drops_match_tracking_variants(tmp_path
     source.append_history([LISTING], tmp_path)
     history = tmp_path / "property_history.csv"
     assert _rows(history)[0]["url"] == "https://www.ddproperty.com/listing/a-1"
-    cheaper = {**LISTING, "price": 15000.0, "url": "https://www.ddproperty.com/listing/a-1?utm_medium=mail"}
+    cheaper = {
+        **LISTING,
+        "price": 15000.0,
+        "url": "https://www.ddproperty.com/listing/a-1?utm_medium=mail",
+    }
     drops = source.detect_price_drops([cheaper], history, 10.0)
     assert [d["old_price"] for d in drops] == [20000.0]
 
@@ -112,7 +122,11 @@ def test_ddproperty_snapshot_is_written_atomically(tmp_path):
     from property.ddproperty_scraper import DDPropertyScraper
 
     scraper = DDPropertyScraper(output_dir=tmp_path)
-    with patch.object(DDPropertyScraper, "_collect", return_value=[{"title": "X", "price": 1, "url": "u"}]):
+    with patch.object(
+        DDPropertyScraper,
+        "_collect",
+        return_value=[{"title": "X", "price": 1, "url": "u"}],
+    ):
         result = asyncio.run(scraper.run())
     path = Path(result[0]["output"])
     assert _rows(path)[0]["title"] == "X"

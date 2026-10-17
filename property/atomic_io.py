@@ -25,7 +25,9 @@ def write_text_atomic(path: str | Path, text: str, encoding: str = "utf-8") -> N
 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent)
+    )
     try:
         with os.fdopen(fd, "w", encoding=encoding, newline="") as handle:
             handle.write(text)
@@ -40,7 +42,9 @@ def write_text_atomic(path: str | Path, text: str, encoding: str = "utf-8") -> N
         raise
 
 
-def render_csv(rows: Iterable[dict[str, Any]], fieldnames: Sequence[str], *, header: bool = True) -> str:
+def render_csv(
+    rows: Iterable[dict[str, Any]], fieldnames: Sequence[str], *, header: bool = True
+) -> str:
     """Render ``rows`` as CSV text in memory (extra keys are ignored)."""
 
     buffer = io.StringIO(newline="")
@@ -51,7 +55,9 @@ def render_csv(rows: Iterable[dict[str, Any]], fieldnames: Sequence[str], *, hea
     return buffer.getvalue()
 
 
-def append_csv_atomic(path: str | Path, rows: Iterable[dict[str, Any]], fieldnames: Sequence[str]) -> None:
+def append_csv_atomic(
+    path: str | Path, rows: Iterable[dict[str, Any]], fieldnames: Sequence[str]
+) -> None:
     """Append ``rows`` by atomically rewriting ``path`` with old + new content.
 
     History files are small (at most a few hundred rows per run), so a full
@@ -62,4 +68,6 @@ def append_csv_atomic(path: str | Path, rows: Iterable[dict[str, Any]], fieldnam
     existing = target.read_text(encoding="utf-8") if target.exists() else ""
     if existing and not existing.endswith("\n"):
         existing += "\r\n"
-    write_text_atomic(target, existing + render_csv(rows, fieldnames, header=not existing))
+    write_text_atomic(
+        target, existing + render_csv(rows, fieldnames, header=not existing)
+    )
