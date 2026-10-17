@@ -100,7 +100,10 @@ def _dedupe_and_filter(
         price = _price_value(listing.get("price"))
         if max_price and price is not None and price > max_price:
             continue
-        key = listing["url"] or re.sub(r"\s+", " ", str(listing.get("title") or "")).strip().lower()
+        key = (
+            listing["url"]
+            or re.sub(r"\s+", " ", str(listing.get("title") or "")).strip().lower()
+        )
         if not key or key in seen:
             continue
         seen.add(key)
@@ -158,7 +161,11 @@ def parse_next_data(
         ).get("listingData") or {}
         if not isinstance(listing_data, dict) or not isinstance(meta, dict):
             continue
-        type_code = str(listing_data.get("typeCode") or (listing_data.get("property") or {}).get("typeCode") or "")
+        type_code = str(
+            listing_data.get("typeCode")
+            or (listing_data.get("property") or {}).get("typeCode")
+            or ""
+        )
         if type_code and type_code.upper() not in {"RENT", "N"}:
             continue
         location = " ".join(
@@ -170,7 +177,9 @@ def parse_next_data(
                 meta.get("areaName"),
             )
         ).strip()
-        if bangkok_only and not _is_bangkok(location + " " + str(listing_data.get("localizedTitle") or "")):
+        if bangkok_only and not _is_bangkok(
+            location + " " + str(listing_data.get("localizedTitle") or "")
+        ):
             continue
         price = _listing_price(listing_data, meta)
         if price is None or price <= 0:
@@ -178,7 +187,9 @@ def parse_next_data(
         url = str(listing_data.get("url") or "")
         parsed.append(
             {
-                "title": str(listing_data.get("localizedTitle") or meta.get("listingTitle") or "").strip(),
+                "title": str(
+                    listing_data.get("localizedTitle") or meta.get("listingTitle") or ""
+                ).strip(),
                 "price": price,
                 "location": location or "Bangkok",
                 "bedrooms": meta.get("bedroom"),
@@ -212,7 +223,9 @@ class DDPropertyScraper:
         output_dir: str | Path | None = None,
         **_: Any,
     ) -> None:
-        self.listing_type = "condo_rent_bkk" if type in {"condo", "condo_rent_bkk"} else type
+        self.listing_type = (
+            "condo_rent_bkk" if type in {"condo", "condo_rent_bkk"} else type
+        )
         self.max_pages = max(1, int(max_pages or 1))
         self.max_price = float(max_price) if max_price not in (None, "") else None
         if self.max_price is not None and not math.isfinite(self.max_price):
@@ -249,7 +262,9 @@ class DDPropertyScraper:
                 continue
             listings.append(
                 {
-                    "title": source._clean_property_title(str(result.get("title") or ""), url),
+                    "title": source._clean_property_title(
+                        str(result.get("title") or ""), url
+                    ),
                     "price": price,
                     "location": "Bangkok",
                     "bedrooms": None,
@@ -265,7 +280,9 @@ class DDPropertyScraper:
             html = fetch_search_html(SOURCE_URL)
         except (httpx.HTTPError, OSError):
             html = ""
-        listings = parse_next_data(html, self.listing_type, self.max_price, bangkok_only=True)
+        listings = parse_next_data(
+            html, self.listing_type, self.max_price, bangkok_only=True
+        )
         if listings:
             return listings
         markdown = source.free_scrape_url(SOURCE_URL)
@@ -274,7 +291,13 @@ class DDPropertyScraper:
 
     def _write_snapshot(self, listings: list[dict[str, Any]], scraped_at: str) -> Path:
         snapshot_path = self.output_dir / "ddproperty_condos.csv"
-        rows = [{**{field: listing.get(field, "") for field in FIELDNAMES}, "scraped_at": scraped_at} for listing in listings]
+        rows = [
+            {
+                **{field: listing.get(field, "") for field in FIELDNAMES},
+                "scraped_at": scraped_at,
+            }
+            for listing in listings
+        ]
         write_text_atomic(snapshot_path, render_csv(rows, FIELDNAMES))
         return snapshot_path
 
@@ -283,4 +306,10 @@ class DDPropertyScraper:
         scraped_at = datetime.now(timezone.utc).isoformat()
         snapshot_path = self._write_snapshot(listings, scraped_at)
         print(f"[ddproperty_condos] {len(listings)} listings -> {snapshot_path}")
-        return [{"source": "ddproperty_condos", "count": len(listings), "output": str(snapshot_path)}]
+        return [
+            {
+                "source": "ddproperty_condos",
+                "count": len(listings),
+                "output": str(snapshot_path),
+            }
+        ]

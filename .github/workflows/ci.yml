@@ -1,28 +1,26 @@
-name: ci
+# CI + security baseline (DevSecOps Phase 1). Public repository: GitHub-hosted runners.
+# Replaces the previous standalone `ci` workflow (Ruff + offline pytest), which this duplicates.
+name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest ruff
-      - name: Lint
-        run: ruff check .
-      - name: Offline tests (fixtures only, no live site traffic)
-        run: python -m pytest -q
+  scraper:
+    uses: bookchaowalit/platform-ci-workflows/.github/workflows/ci-python.yml@c37ef9d113eefb3ed45429717cb7ca201192c3fc # v1.0.1
+    with:
+      # Matches the previous CI; tests are offline (fixtures only, no live site traffic).
+      python-version: "3.11"
+
+  security:
+    uses: bookchaowalit/platform-ci-workflows/.github/workflows/security.yml@c37ef9d113eefb3ed45429717cb7ca201192c3fc # v1.0.1
